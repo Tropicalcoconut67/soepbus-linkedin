@@ -1,0 +1,74 @@
+name: Update latest LinkedIn post
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: '23 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: soepbus-linkedin-scraper
+  cancel-in-progress: false
+
+jobs:
+
+  update-linkedin:
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Scrape latest LinkedIn post
+        run: npm run scrape
+
+      # GitHub schakelt geplande workflows in openbare repositories
+      # na 60 dagen zonder repository-activiteit automatisch uit.
+      #
+      # Daarom veranderen we dit bestand één keer per week.
+      - name: Keep scheduled workflow active
+        run: date -u +"%G-W%V" > .keepalive
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add latest.json .keepalive
+
+          if git diff --cached --quiet; then
+            echo "Geen wijzigingen."
+            exit 0
+          fi
+
+          git commit -m "Update latest LinkedIn post"
+          git push
+
+      - name: Upload debug files on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: linkedin-debug
+          path: |
+            debug-linkedin.png
+            debug-linkedin.html
+          if-no-files-found: ignore
+          retention-days: 7
